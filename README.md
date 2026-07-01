@@ -257,3 +257,26 @@ user has passwordless `sudo` (default on Ubuntu AMIs, needed for `become`); and
   run history if you outgrow a single control node.
 - **CI/CD (GitHub Actions, GitLab CI, Jenkins)** — run `ansible-playbook` from a
   pipeline on merge to `main`; pairs well with the linting workflow already here.
+
+## Run logs & failure alerting
+
+Every `ansible-playbook` run appends to **`/var/log/ansible/ansible.log`**
+(`log_path` in `ansible.cfg`) in addition to journald. The systemd units also run
+`scripts/notify-result.sh` as an `ExecStopPost` hook, which records each converge:
+
+- `/var/log/ansible/converge-status.log` — one line per run (`result=success/…`).
+- `/var/log/ansible/converge-failures.log` — failures only; point a CloudWatch
+  Logs agent or a cron alarm at this single file.
+
+For push alerts, set `ANSIBLE_ALERT_SNS_TOPIC_ARN` in `/etc/ansible/estate.env`
+(the node's IAM role needs `sns:Publish` on that topic); the hook then publishes
+a message on any failed converge.
+
+```bash
+# quick health check on the control node
+tail -n 5 /var/log/ansible/converge-status.log
+tail -n 20 /var/log/ansible/converge-failures.log   # empty = no failures
+grep -c 'failed=[1-9]' /var/log/ansible/ansible.log  # any run with a failed host
+```
+
+The cloud-init in `deploy/` creates `/var/log/ansible` (ubuntu-owned) at build time.

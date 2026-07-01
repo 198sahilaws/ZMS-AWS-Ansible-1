@@ -26,6 +26,19 @@
           '{{ aws_region }}', ansible_secret_name set={{ (ansible_secret_name | length > 0) }}.
         success_msg: Pre-flight OK — region and consolidated secret configured.
 
+    - name: Assert the dynamic inventory discovered managed hosts
+      ansible.builtin.assert:
+        that:
+          - (groups['os_linux'] | default([]) | length) + (groups['os_windows'] | default([]) | length) > 0
+        fail_msg: >-
+          No managed hosts discovered by the aws_ec2 inventory. Check that
+          AWS_REGION ('{{ aws_region }}') is the region the instances run in, and
+          that the `tag:ManagedBy` value in inventory/aws_ec2.yml matches the
+          instances (Terraform tags them ManagedBy=Terraform, capital T).
+        success_msg: >-
+          Discovered {{ (groups['os_linux'] | default([]) | length)
+          + (groups['os_windows'] | default([]) | length) }} managed host(s).
+
 - name: Linux estate
   hosts: os_linux
   gather_facts: true

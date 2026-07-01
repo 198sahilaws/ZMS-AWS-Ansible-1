@@ -13,7 +13,7 @@ regions:
   - "{{ lookup('ansible.builtin.env', 'AWS_REGION') | default('eu-west-3', true) }}"
 filters:
   instance-state-name: running
-  tag:ManagedBy: terraform          # only managed instances
+  tag:ManagedBy: Terraform          # only managed instances
 # Prefer private IP — the control node sits inside the VPC.
 hostnames:
   - private-ip-address
