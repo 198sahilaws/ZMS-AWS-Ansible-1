@@ -211,3 +211,49 @@ ansible-playbook playbooks/amazonlinux-mysql.yml -e target=role_db
 > OS family, so they are safe to run estate-wide; the non-matching distro is
 > skipped per host.
 
+
+## Automated execution (systemd timers)
+
+The control node runs the playbooks on a schedule via systemd. Unit files are in
+`systemd/`. Because systemd (and `sudo`) do not inherit your shell environment,
+`AWS_REGION` / `ANSIBLE_SECRET_NAME` are supplied through an `EnvironmentFile`.
+
+```bash
+# 1. Environment file (names the secret; holds no secret material)
+sudo install -m 600 systemd/estate.env.example /etc/ansible/estate.env
+sudo vi /etc/ansible/estate.env          # set AWS_REGION + ANSIBLE_SECRET_NAME
+
+# 2. Install units
+sudo cp systemd/ansible-*.service systemd/ansible-*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# 3. Enable the timers
+sudo systemctl enable --now ansible-bootstrap.timer   # control-node self-converge (30 min)
+sudo systemctl enable --now ansible-estate.timer      # estate converge via site.yml (60 min)
+
+# Run once now / inspect
+sudo systemctl start ansible-estate.service
+systemctl list-timers 'ansible-*'
+journalctl -u ansible-estate.service -n 50 --no-pager
+```
+
+Requirements: `ansible-core` (and `git`, AWS CLI/`boto3`) installed **system-wide**
+so the unit's `PATH` finds them (or set `PATH=` in `estate.env`); the `ubuntu`
+user has passwordless `sudo` (default on Ubuntu AMIs, needed for `become`); and
+`/opt/control-repo` is owned by `ubuntu`.
+
+- `ansible-bootstrap.*` runs `scripts/reconverge.sh` — git pull, refresh
+  collections, re-apply `bootstrap.yml` (self-heals the control node).
+- `ansible-estate.*` runs `site.yml` in rolling batches. To alert-only on drift,
+  change its `ExecStart` to `... site.yml --check --diff` first, then a second
+  enforce timer.
+
+### Alternatives
+
+- **cron** — simplest, but no logging/dependency ordering; systemd is preferred.
+- **EventBridge Scheduler + SSM Run Command** — trigger the converge from AWS on
+  a schedule without a persistent timer; good if the control node is ephemeral.
+- **AWX / Ansible Automation Platform** — web UI, RBAC, scheduling, surveys, and
+  run history if you outgrow a single control node.
+- **CI/CD (GitHub Actions, GitLab CI, Jenkins)** — run `ansible-playbook` from a
+  pipeline on merge to `main`; pairs well with the linting workflow already here.
